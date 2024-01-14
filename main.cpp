@@ -11,6 +11,220 @@
 
 #include "RedirectProcessIO.h"
 
+#include <windows.h>
+#include <wininet.h>
+#include <stdio.h>
+
+
+int http_get(char *host, char *uri, char *headers)
+{
+
+	HINTERNET hSession = InternetOpen(
+		"Mozilla/5.0", // User-Agent
+		INTERNET_OPEN_TYPE_PRECONFIG,
+		NULL,
+		NULL,
+		0);
+
+	HINTERNET hConnect = InternetConnect(
+		hSession,
+		host, // HOST
+		0,
+		"",
+		"",
+		INTERNET_SERVICE_HTTP,
+		0,
+		0);
+
+	HINTERNET hHttpFile = HttpOpenRequest(
+		hConnect,
+		"GET", // METHOD
+		uri,   // URI
+		NULL,
+		NULL,
+		NULL,
+		INTERNET_FLAG_RELOAD,
+		0);
+
+
+	HttpAddRequestHeaders(hHttpFile, headers, -1, HTTP_ADDREQ_FLAG_ADD);
+
+
+	while (!HttpSendRequest(hHttpFile, NULL, 0, 0, 0)) {
+		printf("HttpSendRequest error : (%lu)\n", GetLastError());
+
+		InternetErrorDlg(
+			GetDesktopWindow(),
+			hHttpFile,
+			ERROR_INTERNET_CLIENT_AUTH_CERT_NEEDED,
+			FLAGS_ERROR_UI_FILTER_FOR_ERRORS |
+			FLAGS_ERROR_UI_FLAGS_GENERATE_DATA |
+			FLAGS_ERROR_UI_FLAGS_CHANGE_OPTIONS,
+			NULL);
+	}
+
+	char bufQuery[32];
+	DWORD dwLengthBufQuery;
+	dwLengthBufQuery = sizeof(bufQuery);
+	DWORD dwIndex;
+	dwIndex = 0;
+
+	// get Content-Length value but... too small
+	BOOL bQuery;
+	bQuery = HttpQueryInfo(
+	hHttpFile,
+	HTTP_QUERY_CONTENT_LENGTH,
+	bufQuery,
+	&dwLengthBufQuery,
+	&dwIndex);
+	if (!bQuery)
+	printf("HttpQueryInfo error : <%lu>\n", GetLastError());
+
+	DWORD dwFileSize;
+	dwFileSize = (DWORD)atol(bufQuery);
+//	dwFileSize = BUFSIZ;
+
+	char* buffer;
+	buffer = new char[dwFileSize + 1];
+
+	while (true)
+	{
+		DWORD dwBytesRead;
+		BOOL bRead;
+
+		bRead = InternetReadFile(
+			hHttpFile,
+			buffer,
+			dwFileSize + 1,
+			&dwBytesRead);
+
+		if (dwBytesRead == 0) break;
+
+		if (!bRead)
+		{
+			printf("InternetReadFile error : <%lu>\n", GetLastError());
+		}
+		else
+		{
+			buffer[dwBytesRead] = 0;
+			printf("Retrieved %lu data bytes: %s\n", dwBytesRead, buffer);
+		}
+
+		break;
+	}
+
+	InternetCloseHandle(hHttpFile);
+	InternetCloseHandle(hConnect);
+	InternetCloseHandle(hSession);
+
+	return 0;
+}
+
+int http_put(char *host, char *uri, char *headers, char *data, int length)
+{
+
+	HINTERNET hSession = InternetOpen(
+		"Mozilla/5.0", // User-Agent
+		INTERNET_OPEN_TYPE_PRECONFIG,
+		NULL,
+		NULL,
+		0);
+
+	HINTERNET hConnect = InternetConnect(
+		hSession,
+		host, // HOST
+		0,
+		"",
+		"",
+		INTERNET_SERVICE_HTTP,
+		0,
+		0);
+
+	HINTERNET hHttpFile = HttpOpenRequest(
+		hConnect,
+		"GET", // METHOD
+		uri,   // URI
+		NULL,
+		NULL,
+		NULL,
+		INTERNET_FLAG_RELOAD,
+		0);
+
+
+	HttpAddRequestHeaders(hHttpFile, headers, -1, HTTP_ADDREQ_FLAG_ADD);
+
+
+	while (!HttpSendRequest(hHttpFile, NULL, 0, 0, 0)) {
+		printf("HttpSendRequest error : (%lu)\n", GetLastError());
+
+		InternetErrorDlg(
+			GetDesktopWindow(),
+			hHttpFile,
+			ERROR_INTERNET_CLIENT_AUTH_CERT_NEEDED,
+			FLAGS_ERROR_UI_FILTER_FOR_ERRORS |
+			FLAGS_ERROR_UI_FLAGS_GENERATE_DATA |
+			FLAGS_ERROR_UI_FLAGS_CHANGE_OPTIONS,
+			NULL);
+	}
+
+	/*
+	char bufQuery[32];
+	DWORD dwLengthBufQuery;
+	dwLengthBufQuery = sizeof(bufQuery);
+	DWORD dwIndex;
+	dwIndex = 0;
+
+	// get Content-Length value but... too small
+	BOOL bQuery;
+	bQuery = HttpQueryInfo(
+	hHttpFile,
+	HTTP_QUERY_CONTENT_LENGTH,
+	bufQuery,
+	&dwLengthBufQuery,
+	&dwIndex);
+	if (!bQuery)
+	printf("HttpQueryInfo error : <%lu>\n", GetLastError());
+	*/
+
+	DWORD dwFileSize;
+	//dwFileSize = (DWORD)atol(bufQuery);
+	dwFileSize = BUFSIZ;
+
+	char* buffer;
+	buffer = new char[dwFileSize + 1];
+
+	while (true)
+	{
+		DWORD dwBytesRead;
+		BOOL bRead;
+
+		bRead = InternetReadFile(
+			hHttpFile,
+			buffer,
+			dwFileSize + 1,
+			&dwBytesRead);
+
+		if (dwBytesRead == 0) break;
+
+		if (!bRead)
+		{
+			printf("InternetReadFile error : <%lu>\n", GetLastError());
+		}
+		else
+		{
+			buffer[dwBytesRead] = 0;
+			printf("Retrieved %lu data bytes: %s\n", dwBytesRead, buffer);
+		}
+	}
+
+	InternetCloseHandle(hHttpFile);
+	InternetCloseHandle(hConnect);
+	InternetCloseHandle(hSession);
+
+	return 0;
+}
+
+
 #define PATH_BUFFER (1024)
 #define COMMMAND_BUFFER (8192)
 
@@ -1243,7 +1457,7 @@ void ListInstalled()
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmdLine,        int       nShowCmd)
 {
-	int command = 0;
+	int command = 3;
 
 	int process = 1;
 	int pid = 9999;
@@ -1267,12 +1481,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 		kill_process(pid, 0);
 		break;
 	case 3:
-		getf();
+//		getf();
+		http_get("www.awright2009.com", "/terminal.html", "User-Agent: Mozilla/5.0\r\n\r\n");
 		break;
 	case 4:
-		putf();
+	{
+		char data[4096];
+		int length = 0;
+
+		http_put("www.awright2009.com", "/file.html", "User-Agent: Mozilla/5.0\r\n\r\n", data, length);
+//		putf();
 		//thread_get_put_file
 		break;
+	}
 	case 5:
 		if (process)
 			create_process_nonblocking(cmdline);
