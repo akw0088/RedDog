@@ -11,6 +11,16 @@
 
 #include "RedirectProcessIO.h"
 
+#include <comdef.h>
+#include <Wbemidl.h>
+#include <iostream>
+
+#include "urlmon.h"
+
+using namespace std;
+
+#pragma comment(lib, "wbemuuid.lib")
+
 #define PATH_BUFFER (1024)
 #define COMMMAND_BUFFER (8192)
 
@@ -469,77 +479,6 @@ BOOL TerminateProcess(DWORD dwProcessId, UINT uExitCode)
 }
 
 
-int list_process_or_service( BOOL process )
-{
-	if (process)
-	{
-		list_processes();
-	}
-	else
-	{
-		list_services();
-	}
-
-	return 0;
-}
-
-int kill_process(int pid, int exit_code)
-{
-	TerminateProcess(pid, exit_code);
-	return 0;
-}
-
-int getf()
-{
-	return 0;
-}
-
-int putf()
-{
-	return 0;
-}
-
-int start_process_or_service(BOOL process, char *cmdline)
-{
-
-	if (process)
-	{
-		create_process_nonblocking(cmdline);
-	}
-	else
-	{
-		start_service(cmdline);
-	}
-
-	return 0;
-}
-
-int stop_process_or_service(BOOL process, char *cmdline, int pid)
-{
-
-	if (process)
-	{
-		TerminateProcess(pid, 0);
-	}
-	else
-	{
-		stop_service(cmdline);
-	}
-
-	return 0;
-}
-
-
-// start process as user
-int pidrun()
-{
-	return 0;
-}
-
-int geturl()
-{
-	return 0;
-}
 
 void RedirectIOToConsole(int debug)
 {
@@ -1339,12 +1278,7 @@ int whoami()
 	return 0;
 }
 
-#include <comdef.h>
-#include <Wbemidl.h>
-#include <iostream>
-using namespace std;
 
-#pragma comment(lib, "wbemuuid.lib")
 
 int query_wmi()
 {
@@ -1653,12 +1587,89 @@ void ListInstalled()
 }
 
 
+
+int get_url(char *url, char *path)
+{
+	HRESULT hr = URLDownloadToFile((LPUNKNOWN)0x0, url, path, 0, (LPBINDSTATUSCALLBACK)0x0);
+
+	if (hr != S_OK)
+	{
+		printf("URLDownloadToFile failed\n");
+	}
+
+	return 0;
+}
+
+int list_process_or_service(BOOL process)
+{
+	if (process)
+	{
+		list_processes();
+	}
+	else
+	{
+		list_services();
+	}
+
+	return 0;
+}
+
+int kill_process(int pid, int exit_code)
+{
+	TerminateProcess(pid, exit_code);
+	return 0;
+}
+
+int getf()
+{
+	return 0;
+}
+
+int putf()
+{
+	return 0;
+}
+
+int start_process_or_service(BOOL process, char *cmdline)
+{
+
+	if (process)
+	{
+		create_process_nonblocking(cmdline);
+	}
+	else
+	{
+		start_service(cmdline);
+	}
+
+	return 0;
+}
+
+int stop_process_or_service(BOOL process, char *cmdline, int pid)
+{
+
+	if (process)
+	{
+		TerminateProcess(pid, 0);
+	}
+	else
+	{
+		stop_service(cmdline);
+	}
+
+	return 0;
+}
+
+
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmdLine,        int       nShowCmd)
 {
-	int command = 3;
+	int command = 10;
 
 	int process = 1;
 	int pid = 9999;
+	char *url = "https://lineofsight.awright2009.com/roomy.zip";
+	char *path ="file.data";
 
 	char *cmdline = "notepad.exe";
 
@@ -1705,11 +1716,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 
 	case 8:
 	case 9:
-		pidrun();// start process as user
+		StartProcessAsUser("c:\\Windows\\System32\\cmd.exe", 0, "awright");// start process as user
 		break;
 	case 10:
-		geturl();
+	{
+		int ret = get_url(url, path);
 		break;
+	}
 	case 11:
 		break;
 	case 12:
