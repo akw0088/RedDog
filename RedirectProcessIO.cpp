@@ -119,7 +119,7 @@ int RedirectProcessIO::CreateChildProcess()
 
 
 
-void RedirectProcessIO::write(char *cmd)
+int RedirectProcessIO::write(char *cmd)
 {
 	// Read from a file and write its contents to the pipe for the child's STDIN.
 	// Stop when there is no more data. 
@@ -130,22 +130,26 @@ void RedirectProcessIO::write(char *cmd)
 	if (bSuccess == 0)
 	{
 		printf("WriteFile to pipe failed error code %d\n", GetLastError());
+		return -1;
 	}
 
 
-	// Close the pipe handle so the child process stops reading. 
+	return 0;
 
 }
 
-void RedirectProcessIO::close()
+int RedirectProcessIO::close()
 {
 	if (!CloseHandle(handle_stdin_write))
 	{
 		printf("CloseHandle failed\n");
+		return -1;
 	}
+
+	return 0;
 }
 
-void RedirectProcessIO::read(char *buffer, int length)
+int RedirectProcessIO::read(char *buffer, int length)
 {
 	DWORD bytesRead = 0;
 	DWORD bytesAvail = 0;
@@ -157,6 +161,7 @@ void RedirectProcessIO::read(char *buffer, int length)
 	if (bSuccess == 0)
 	{
 		printf("PeekNamedPipe failed\n");
+		return -1;
 	}
 
 	// now actually remove that data from the pipe (blocking if empty)
@@ -167,8 +172,10 @@ void RedirectProcessIO::read(char *buffer, int length)
 		if (bSuccess == 0)
 		{
 			printf("ReadFile from pipe failed\n");
+			return -1;
 		}
 	}
 
+	return 0;
 }
 

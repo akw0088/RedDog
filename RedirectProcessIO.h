@@ -6,9 +6,9 @@ class RedirectProcessIO
 public:
 	RedirectProcessIO();
 	int start(char *child);
-	void write(char *cmd);
-	void close();
-	void read(char *buffer, int length);
+	int write(char *cmd);
+	int close();
+	int read(char *buffer, int length);
 
 
 private:

