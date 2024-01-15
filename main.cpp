@@ -499,8 +499,33 @@ int putf()
 	return 0;
 }
 
-int start_process_or_service()
+int start_process_or_service(BOOL process, char *cmdline)
 {
+
+	if (process)
+	{
+		create_process_nonblocking(cmdline);
+	}
+	else
+	{
+		start_service(cmdline);
+	}
+
+	return 0;
+}
+
+int stop_process_or_service(BOOL process, char *cmdline, int pid)
+{
+
+	if (process)
+	{
+		TerminateProcess(pid, 0);
+	}
+	else
+	{
+		stop_service(cmdline);
+	}
+
 	return 0;
 }
 
@@ -861,6 +886,67 @@ int stop_service(char *service_name)
 	return 0;
 }
 
+
+int  StartProcessAsUser(char *process_path, int pid, char *username)
+{
+	STARTUPINFO si = { 0 };
+	PROCESS_INFORMATION pi = {};
+
+	//	HANDLE hUserToken;
+	HANDLE ProcessToken;
+	HANDLE ProcessHandle;
+
+
+	pid = GetCurrentProcessId();
+
+	if (pid == 0)
+	{
+		ProcessHandle = GetCurrentProcess();
+	}
+	else
+	{
+		// almost PROCESS_ALL_ACCESS, but missing one F
+		ProcessHandle = OpenProcess(0x1f0fff, 0, pid);
+	}
+
+	if (ProcessHandle == (HANDLE)-1)
+	{
+		DWORD error = GetLastError();
+		printf("OpenProcess failed with %d!", error);
+		return -1;
+	}
+
+	BOOL bSuccess = OpenProcessToken(ProcessHandle, 0xb, &ProcessToken);
+	if (bSuccess == 0)
+	{
+		DWORD error = GetLastError();
+		printf("OpenProcessToken Failed with %d!", error);
+		return -1;
+	}
+
+
+	memset(&si, 0, 0x44);
+	si.cb = 0x44;
+	si.dwFlags = 1;
+	si.wShowWindow = 0;
+	bSuccess = CreateProcessAsUser(ProcessToken, (LPCSTR)0x0, process_path, (LPSECURITY_ATTRIBUTES)0x0, (LPSECURITY_ATTRIBUTES)0x0, 1, 0, (LPVOID)0x0, (LPCSTR)0x0, &si, &pi);
+
+	if (bSuccess == 0)
+	{
+		DWORD error = GetLastError();
+		printf("CreateProcessAsUserA failed with %d!", error);
+		CloseHandle(ProcessToken);
+		return -1;
+	}
+	else
+	{
+		printf("OK!");
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+	CloseHandle(ProcessToken);
+	return 0;
+}
 
 BOOL IsElevated()
 {
