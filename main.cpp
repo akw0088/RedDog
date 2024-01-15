@@ -442,11 +442,21 @@ int list_services()
 				NULL                         // Group name
 			))
 		{
+			char state_str[][80] = {
+				"SERVICE_STATE_INVALID",
+				"SERVICE_STOPPED",
+				"SERVICE_START_PENDING",
+				"SERVICE_STOP_PENDING"
+				"SERVICE_RUNNING",
+				"SERVICE_CONTINUE_PENDING",
+				"SERVICE_PAUSE_PENDING",
+				"SERVICE_PAUSED",
+			};
 
 			printf("Service List:\n");
 			for (DWORD i = 0; i < cnt; i++)
 			{
-				printf("pid %8d:\t%-50s \n", services[i].ServiceStatusProcess.dwProcessId, services[i].lpServiceName);
+				printf("pid %8d:\t%-24s\t%-24s %-32s\n", services[i].ServiceStatusProcess.dwProcessId, &state_str[services[i].ServiceStatusProcess.dwCurrentState][0], services[i].lpServiceName, services[i].lpDisplayName);
 			}
 		}
 		CloseServiceHandle(scMgr);
@@ -1662,11 +1672,117 @@ int stop_process_or_service(BOOL process, char *cmdline, int pid)
 
 
 
+int list_volumes()
+{
+	// May use 2-D array for char. This program compiled for wide char/unicode
+
+	LPCSTR drive[26] = {
+		"A:\\",
+		"B:\\",
+		"C:\\",
+		"D:\\",
+		"E:\\",
+		"F:\\",
+		"G:\\",
+		"H:\\",
+		"I:\\",
+		"J:\\",
+		"K:\\",
+		"L:\\",
+		"M:\\",
+		"N:\\",
+		"O:\\",
+		"P:\\",
+		"Q:\\",
+		"R:\\",
+		"S:\\",
+		"T:\\",
+		"U:\\",
+		"V:\\",
+		"W:\\",
+		"X:\\",
+		"Y:\\",
+		"Z:\\"
+	};
+
+	DWORD drives = GetLogicalDrives();
+
+	int i;
+	for (i = 0; i < 26; i++)
+	{
+		UINT type = GetDriveType(drive[i]);
+
+		switch (type)
+		{
+		case 0:
+			printf("Drive %s is type %d - Unknown\n", drive[i], type);
+			break;
+		case 1:
+			//printf("Drive %s is type %d - Invalid root path/Not available.\n", drive2[i], type);
+			break;
+		case 2:
+			printf("Drive %s is type %d - Removable\n", drive[i], type);
+			break;
+		case 3:
+			printf("Drive %s is type %d - Fixed\n", drive[i], type);
+			break;
+		case 4:
+			printf("Drive %s is type %d - Network\n", drive[i], type);
+			break;
+		case 5:
+			printf("Drive %s is type %d - CD-ROM\n", drive[i], type);
+			break;
+		case 6:
+			printf("Drive %s is type %d - RAMDISK\n", drive[i], type);
+			break;
+		default: "Unknown value!\n";
+		}
+
+		if (type > 1)
+		{
+			TCHAR wszVolumeName[MAX_PATH + 1] = { 0 };
+			DWORD dwVolumeSerialNumber;
+			DWORD dwFileSystemFlags;
+			TCHAR wszSystemName[MAX_PATH + 1] = { 0 };
+
+			BOOL bSuccess = GetVolumeInformation(
+				drive[i], //default to volume for current working directory
+				wszVolumeName,
+				MAX_PATH,
+				&dwVolumeSerialNumber,
+				NULL, //component max length
+				&dwFileSystemFlags,
+				wszSystemName,
+				MAX_PATH
+			);
+
+			if (!bSuccess)
+			{
+				DWORD err = GetLastError();
+
+				printf("GetVolumeInformation failed %d\n", err);
+
+			}
+			else
+			{
+				printf("\tVolume name: %s\n", wszVolumeName);
+				printf("\tFile system type: %s\n", wszSystemName);
+			}
+
+		}
+
+	}
+
+	return 0;
+
+}
+
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmdLine,        int       nShowCmd)
 {
-	int command = 10;
+	int command = 11;
 
-	int process = 1;
+	int process = 0;
 	int pid = 9999;
 	char *url = "https://lineofsight.awright2009.com/roomy.zip";
 	char *path ="file.data";
@@ -1724,6 +1840,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR     lpCmd
 		break;
 	}
 	case 11:
+		list_volumes();
 		break;
 	case 12:
 		break;
